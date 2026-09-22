@@ -1,162 +1,144 @@
+// 界面层装配：顶部看板 + 操作人 + 新建工卡 + 工具台账 / 工卡列表 / 工卡详情
+import { useEffect, useState } from "react";
 import "./styles.css";
-
-const project = {
-  "id": "hxwl-07",
-  "port": 5107,
-  "title": "航空维修检查清单",
-  "subtitle": "按ATA章节推进维修放行前检查",
-  "stack": "React + Vite + TypeScript + CSS",
-  "theme": [
-    "#1d4ed8",
-    "#475569",
-    "#f97316"
-  ],
-  "domain": "航空维修",
-  "users": [
-    "维修工程师",
-    "放行人员",
-    "培训教员"
-  ],
-  "metrics": [
-    "完成率",
-    "缺陷项",
-    "待复核",
-    "ATA章节"
-  ],
-  "filters": [
-    "机体",
-    "动力装置",
-    "航电",
-    "起落架"
-  ],
-  "fields": [
-    "机型",
-    "ATA章节",
-    "检查区域",
-    "检查项目",
-    "缺陷描述",
-    "处理意见",
-    "签署人"
-  ],
-  "records": [
-    [
-      "A320",
-      "ATA 32",
-      "起落架",
-      "待复核",
-      "主轮磨耗接近限制"
-    ],
-    [
-      "B737",
-      "ATA 24",
-      "电源系统",
-      "正常",
-      "电瓶电压检查完成"
-    ],
-    [
-      "ARJ21",
-      "ATA 27",
-      "飞控",
-      "缺陷",
-      "副翼作动测试需复查"
-    ]
-  ]
-};
-
-const statusColors = ["status-ok", "status-watch", "status-danger"];
-
-function MetricCard({ label, value, index }: { label: string; value: string; index: number }) {
-  return (
-    <article className="metric-card">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <i className={statusColors[index % statusColors.length]} />
-    </article>
-  );
-}
+import { useDatabase } from "./app/useDatabase";
+import { ToolLedger } from "./ui/ToolLedger";
+import { CardList } from "./ui/CardList";
+import { CardDetail } from "./ui/CardDetail";
 
 function App() {
-  const values = project.metrics.map((metric: string, index: number) => {
-    const base = [84, 12, 31, 7][index % 4];
-    return String(base + index * 3);
-  });
+  const api = useDatabase();
+  const { db, metrics } = api;
+  const [selectedId, setSelectedId] = useState<string | null>(db.cards[0]?.id ?? null);
+
+  useEffect(() => {
+    if (selectedId && !db.cards.some((c) => c.id === selectedId)) {
+      setSelectedId(db.cards[0]?.id ?? null);
+    }
+  }, [db.cards, selectedId]);
+
+  const selected = db.cards.find((c) => c.id === selectedId) ?? null;
 
   return (
     <main className="app-shell">
       <section className="hero">
         <div>
-          <p className="eyebrow">{project.id} · port {project.port}</p>
-          <h1>{project.title}</h1>
-          <p className="subtitle">{project.subtitle}</p>
+          <p className="eyebrow">hxwl-07 · port 5107</p>
+          <h1>工卡与缺件放行台</h1>
+          <p className="subtitle">
+            工卡登记机身、ATA章节、机位、时段、扭矩工具与缺件挂签；机位 / 工具时段重叠、工具校准过期、缺件未解除时整卡拒绝。
+            签署前缺件清零，签署后冻结、补录带原因另存版本；工具未归还不得结卡。
+          </p>
         </div>
         <div className="stack-card">
-          <span>技术栈</span>
-          <strong>{project.stack}</strong>
+          <span>当前操作 / 签署人</span>
+          <input
+            value={db.operator}
+            onChange={(e) => api.setOperator(e.target.value)}
+            placeholder="输入姓名"
+          />
+          <button className="reset-btn" onClick={api.resetAll}>
+            恢复演示数据
+          </button>
         </div>
       </section>
 
       <section className="metrics-grid">
-        {project.metrics.map((metric: string, index: number) => (
-          <MetricCard key={metric} label={metric} value={values[index]} index={index} />
-        ))}
+        <Metric label="工卡总数" value={String(metrics.total)} tone="accent" />
+        <Metric label="未解除缺件" value={String(metrics.openTags)} tone="danger" />
+        <Metric label="工具未归还" value={String(metrics.unreturned)} tone="warn" />
+        <Metric label="工具过期/停用" value={String(metrics.expiredTools)} tone="warn" />
+        <Metric label="已签署冻结" value={String(metrics.signed)} tone="accent" />
+        <Metric label="已结卡" value={String(metrics.closed)} tone="ok" />
       </section>
 
-      <section className="workspace">
-        <aside className="panel narrow">
-          <h2>角色</h2>
-          <div className="chips">
-            {project.users.map((user: string) => (
-              <span key={user}>{user}</span>
-            ))}
-          </div>
-          <h2>筛选</h2>
-          <div className="chips muted">
-            {project.filters.map((filter: string) => (
-              <button key={filter}>{filter}</button>
-            ))}
-          </div>
-        </aside>
+      <NewCardForm onCreate={(id) => setSelectedId(id)} createCard={api.createCard} />
 
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <p>{project.domain}</p>
-              <h2>记录字段</h2>
-            </div>
-            <button className="primary-action">新增记录</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
+      <section className="workspace three-col">
+        <ToolLedger db={db} />
+        <CardList db={db} selectedId={selectedId} onSelect={setSelectedId} />
+        {selected ? (
+          <CardDetail key={selected.id + selected.updatedAt} card={selected} api={api} />
+        ) : (
+          <section className="panel detail-panel empty-detail">
+            <p>从左侧选择一张工卡，或新建工卡开始登记。</p>
+          </section>
+        )}
       </section>
 
-      <section className="records panel">
-        <div className="section-heading">
-          <div>
-            <p>示例数据</p>
-            <h2>近期记录</h2>
-          </div>
-          <button>导出摘要</button>
-        </div>
-        <div className="record-list">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")} className="record-card">
-              <div className="record-index">{String(index + 1).padStart(2, "0")}</div>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      <footer className="page-foot">
+        数据仅保存在本机浏览器（localStorage），刷新后工卡、工具、缺件与版本链保持一致；数据层 / 判定层 / 界面层分离，未新增任何依赖。
+      </footer>
     </main>
+  );
+}
+
+const toneClass = {
+  accent: "status-ok",
+  warn: "status-watch",
+  danger: "status-danger",
+  ok: "status-ok",
+} as const;
+
+function Metric({ label, value, tone }: { label: string; value: string; tone: keyof typeof toneClass }) {
+  return (
+    <article className="metric-card">
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <i className={toneClass[tone]} />
+    </article>
+  );
+}
+
+function NewCardForm({
+  createCard,
+  onCreate,
+}: {
+  createCard: ReturnType<typeof useDatabase>["createCard"];
+  onCreate: (id: string) => void;
+}) {
+  const [airframe, setAirframe] = useState("");
+  const [ata, setAta] = useState("ATA 32 起落架");
+  const [stand, setStand] = useState("");
+  const [start, setStart] = useState("2026-09-24T09:00");
+  const [end, setEnd] = useState("2026-09-24T17:00");
+
+  return (
+    <section className="panel new-card">
+      <div className="panel-head">
+        <h2>新建工卡</h2>
+        <span className="hint">创建后为草稿，登记完成须“校验并提交”</span>
+      </div>
+      <div className="new-card-grid">
+        <label className="field">
+          <span>机身（机号）</span>
+          <input value={airframe} onChange={(e) => setAirframe(e.target.value)} placeholder="如 B-9921" />
+        </label>
+        <label className="field">
+          <span>ATA章节</span>
+          <input value={ata} onChange={(e) => setAta(e.target.value)} />
+        </label>
+        <label className="field">
+          <span>机位</span>
+          <input value={stand} onChange={(e) => setStand(e.target.value)} placeholder="如 A12" />
+        </label>
+        <label className="field">
+          <span>时段起</span>
+          <input type="datetime-local" value={start} onChange={(e) => setStart(e.target.value)} />
+        </label>
+        <label className="field">
+          <span>时段止</span>
+          <input type="datetime-local" value={end} onChange={(e) => setEnd(e.target.value)} />
+        </label>
+        <button
+          className="primary-action"
+          disabled={!airframe.trim() || !stand.trim() || !ata.trim()}
+          onClick={() => onCreate(createCard({ airframe, ata, stand, start, end, toolIds: [] }))}
+        >
+          登记新工卡
+        </button>
+      </div>
+    </section>
   );
 }
 
